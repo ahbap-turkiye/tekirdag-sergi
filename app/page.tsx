@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 
+const basePath = process.env.NODE_ENV === "production" ? "/tekirdag-sergi" : "";
+
 export default function Home() {
   const [introGone, setIntroGone] = useState(false);
   const [skipIntro, setSkipIntro] = useState(false);
@@ -143,7 +145,7 @@ export default function Home() {
             className="flex justify-center -mb-6"
           >
             <img
-              src="/eye-gif.gif"
+              src={`${basePath}/eye-gif.gif`}
               alt="Camera animation"
               className="w-32 h-32 md:w-44 md:h-44"
               style={{ imageRendering: "auto" }}
