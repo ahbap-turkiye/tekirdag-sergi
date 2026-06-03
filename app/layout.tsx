@@ -22,7 +22,7 @@ export const metadata: Metadata = {
   description:
     "Ahbap Tekirdağ gönüllüleri tarafından hazırlanan dijital fotoğraf sergisi. Tekirdağ'ın doğasını, kültürünü ve yaşamını keşfedin.",
   icons: {
-    icon: "/favicon.png",
+    icon: "./favicon.png",
   },
 };
 
