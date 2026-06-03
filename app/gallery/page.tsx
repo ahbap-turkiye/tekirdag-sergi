@@ -2,12 +2,16 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { supabase, type Photo } from "@/lib/supabase";
+import { supabase, type Photo, type Vote } from "@/lib/supabase";
 import {
   getDeviceId,
+  getFingerprint,
+  getClientIp,
   getMyVotes,
   addMyVote,
   removeMyVote,
+  getVoterName,
+  setVoterName,
   MAX_VOTES,
 } from "@/lib/device";
 
@@ -17,7 +21,13 @@ export default function GalleryPage() {
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [myVotes, setMyVotes] = useState<string[]>([]);
   const [voteCounts, setVoteCounts] = useState<Record<string, number>>({});
+  const [voters, setVoters] = useState<Record<string, Pick<Vote, "voter_name" | "created_at">[]>>({});
   const [totalVotes, setTotalVotes] = useState(0);
+  const [nameInput, setNameInput] = useState("");
+
+  useEffect(() => {
+    setNameInput(getVoterName());
+  }, []);
 
   const fetchPhotos = useCallback(async () => {
     const { data } = await supabase
@@ -32,24 +42,41 @@ export default function GalleryPage() {
   const fetchVoteCounts = useCallback(async () => {
     const { data } = await supabase
       .from("votes")
-      .select("photo_id");
+      .select("photo_id, voter_name, created_at");
     if (data) {
       const counts: Record<string, number> = {};
+      const voterMap: Record<string, Pick<Vote, "voter_name" | "created_at">[]> = {};
       let total = 0;
       data.forEach((v) => {
         counts[v.photo_id] = (counts[v.photo_id] || 0) + 1;
+        if (!voterMap[v.photo_id]) voterMap[v.photo_id] = [];
+        voterMap[v.photo_id].push({ voter_name: v.voter_name, created_at: v.created_at });
         total++;
       });
       setVoteCounts(counts);
+      setVoters(voterMap);
       setTotalVotes(total);
     }
   }, []);
 
+  const syncMyVotes = useCallback(async () => {
+    const deviceId = getDeviceId();
+    const { data: myDbVotes } = await supabase
+      .from("votes")
+      .select("photo_id")
+      .eq("device_id", deviceId);
+    const dbVotedIds = myDbVotes ? myDbVotes.map((v) => v.photo_id) : [];
+    if (typeof window !== "undefined") {
+      localStorage.setItem("sergi_my_votes", JSON.stringify(dbVotedIds));
+    }
+    setMyVotes(dbVotedIds);
+  }, []);
+
   useEffect(() => {
-    setMyVotes(getMyVotes());
+    syncMyVotes();
     fetchPhotos();
     fetchVoteCounts();
-  }, [fetchPhotos, fetchVoteCounts]);
+  }, [fetchPhotos, fetchVoteCounts, syncMyVotes]);
 
   const handleVote = async (photoId: string) => {
     const deviceId = getDeviceId();
@@ -64,9 +91,36 @@ export default function GalleryPage() {
       setMyVotes(removeMyVote(photoId));
     } else {
       if (myVotes.length >= MAX_VOTES) return;
-      await supabase
+      const [fingerprint, ip] = await Promise.all([
+        getFingerprint(),
+        getClientIp(),
+      ]);
+
+      // Check if this fingerprint+ip already voted for this photo
+      const { data: existing } = await supabase
         .from("votes")
-        .insert({ photo_id: photoId, device_id: deviceId });
+        .select("id")
+        .eq("photo_id", photoId)
+        .eq("fingerprint", fingerprint)
+        .eq("ip_address", ip);
+
+      if (existing && existing.length > 0) {
+        // Already voted from this device/network
+        setMyVotes(addMyVote(photoId));
+        fetchVoteCounts();
+        return;
+      }
+
+      const currentName = nameInput.trim() || null;
+      if (currentName) setVoterName(currentName);
+
+      await supabase.from("votes").insert({
+        photo_id: photoId,
+        device_id: deviceId,
+        fingerprint,
+        ip_address: ip,
+        voter_name: currentName,
+      });
       setMyVotes(addMyVote(photoId));
     }
     fetchVoteCounts();
@@ -94,32 +148,44 @@ export default function GalleryPage() {
             </p>
           </motion.div>
 
-          {/* Voting Rights */}
+          {/* Voting Rights + Name Input */}
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.5, delay: 0.2 }}
-            className="glass rounded-xl px-5 py-3 flex items-center gap-4 shrink-0"
+            className="glass rounded-xl px-5 py-3 flex flex-col gap-3 shrink-0"
           >
-            <div>
-              <p className="text-xs uppercase tracking-widest font-semibold" style={{ color: "var(--text-secondary)" }}>
-                OY HAKKI
-              </p>
-              <div className="mt-1.5 h-1.5 w-32 rounded-full bg-surface-highest overflow-hidden">
-                <motion.div
-                  className="h-full bg-primary rounded-full progress-glow"
-                  initial={{ width: 0 }}
-                  animate={{ width: `${(myVotes.length / MAX_VOTES) * 100}%` }}
-                  transition={{ duration: 0.5 }}
-                />
+            <div className="flex items-center gap-4">
+              <div>
+                <p className="text-xs uppercase tracking-widest font-semibold" style={{ color: "var(--text-secondary)" }}>
+                  OY HAKKI
+                </p>
+                <div className="mt-1.5 h-1.5 w-32 rounded-full bg-surface-highest overflow-hidden">
+                  <motion.div
+                    className="h-full bg-primary rounded-full progress-glow"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${(myVotes.length / MAX_VOTES) * 100}%` }}
+                    transition={{ duration: 0.5 }}
+                  />
+                </div>
               </div>
-            </div>
-            <span className="text-lg font-bold">
-              {myVotes.length}{" "}
-              <span className="text-sm font-normal" style={{ color: "var(--text-secondary)" }}>
-                / {MAX_VOTES}
+              <span className="text-lg font-bold">
+                {myVotes.length}{" "}
+                <span className="text-sm font-normal" style={{ color: "var(--text-secondary)" }}>
+                  / {MAX_VOTES}
+                </span>
               </span>
-            </span>
+            </div>
+            <input
+              type="text"
+              value={nameInput}
+              onChange={(e) => {
+                setNameInput(e.target.value);
+                setVoterName(e.target.value);
+              }}
+              placeholder="İsmin (isteğe bağlı)"
+              className="w-full px-3 py-1.5 rounded-lg text-sm border border-(--border) bg-transparent focus:border-primary focus:outline-none transition-colors"
+            />
           </motion.div>
         </div>
 
@@ -154,6 +220,7 @@ export default function GalleryPage() {
                 index={i}
                 voted={myVotes.includes(photo.id)}
                 voteCount={voteCounts[photo.id] || 0}
+                voters={voters[photo.id] || []}
                 totalVotes={totalVotes}
                 canVote={myVotes.length < MAX_VOTES || myVotes.includes(photo.id)}
                 onVote={() => handleVote(photo.id)}
@@ -170,6 +237,7 @@ export default function GalleryPage() {
               photo={selectedPhoto}
               voted={myVotes.includes(selectedPhoto.id)}
               voteCount={voteCounts[selectedPhoto.id] || 0}
+              voters={voters[selectedPhoto.id] || []}
               totalVotes={totalVotes}
               canVote={myVotes.length < MAX_VOTES || myVotes.includes(selectedPhoto.id)}
               onVote={() => handleVote(selectedPhoto.id)}
@@ -182,11 +250,14 @@ export default function GalleryPage() {
   );
 }
 
+type VoterInfo = Pick<Vote, "voter_name" | "created_at">;
+
 function GalleryCard({
   photo,
   index,
   voted,
   voteCount,
+  voters,
   totalVotes,
   canVote,
   onVote,
@@ -196,6 +267,7 @@ function GalleryCard({
   index: number;
   voted: boolean;
   voteCount: number;
+  voters: VoterInfo[];
   totalVotes: number;
   canVote: boolean;
   onVote: () => void;
@@ -246,6 +318,21 @@ function GalleryCard({
               transition={{ duration: 0.8, ease: "easeOut" }}
             />
           </div>
+          {/* Voters */}
+          {voters.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {voters.slice(0, 3).map((v, i) => (
+                <span key={i} className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: "var(--elevated)", color: "var(--text-secondary)" }}>
+                  {v.voter_name || "Anonim"}
+                </span>
+              ))}
+              {voters.length > 3 && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full text-primary" style={{ background: "var(--elevated)" }}>
+                  +{voters.length - 3}
+                </span>
+              )}
+            </div>
+          )}
         </div>
         <button
           onClick={(e) => {
@@ -275,6 +362,7 @@ function PhotoModal({
   photo,
   voted,
   voteCount,
+  voters,
   totalVotes,
   canVote,
   onVote,
@@ -283,6 +371,7 @@ function PhotoModal({
   photo: Photo;
   voted: boolean;
   voteCount: number;
+  voters: VoterInfo[];
   totalVotes: number;
   canVote: boolean;
   onVote: () => void;
@@ -366,6 +455,24 @@ function PhotoModal({
               <p className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }}>
                 {photo.story}
               </p>
+            </div>
+          )}
+
+          {/* Voters list */}
+          {voters.length > 0 && (
+            <div className="space-y-2">
+              <span className="text-xs uppercase tracking-widest text-primary font-semibold">Oy Verenler</span>
+              <div className="flex flex-wrap gap-1.5">
+                {voters.map((v, i) => (
+                  <span
+                    key={i}
+                    className="text-xs px-2 py-1 rounded-full"
+                    style={{ background: "var(--elevated)", color: "var(--text-secondary)" }}
+                  >
+                    {v.voter_name || "Anonim"}
+                  </span>
+                ))}
+              </div>
             </div>
           )}
 

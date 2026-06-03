@@ -2,16 +2,21 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
-import { supabase, type Photo } from "@/lib/supabase";
+import { supabase, type Photo, type Vote } from "@/lib/supabase";
 import {
   getDeviceId,
+  getFingerprint,
+  getClientIp,
   getMyVotes,
   addMyVote,
   removeMyVote,
+  getVoterName,
+  setVoterName,
   MAX_VOTES,
 } from "@/lib/device";
 
-type PhotoWithVotes = Photo & { vote_count: number };
+type VoterInfo = Pick<Vote, "voter_name" | "created_at">;
+type PhotoWithVotes = Photo & { vote_count: number; voters: VoterInfo[] };
 
 export default function VotingPage() {
   const [rankings, setRankings] = useState<PhotoWithVotes[]>([]);
@@ -19,6 +24,11 @@ export default function VotingPage() {
   const [myVotedPhotos, setMyVotedPhotos] = useState<Photo[]>([]);
   const [totalVotes, setTotalVotes] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [nameInput, setNameInput] = useState("");
+
+  useEffect(() => {
+    setNameInput(getVoterName());
+  }, []);
 
   const fetchData = useCallback(async () => {
     // Fetch approved photos
@@ -28,25 +38,39 @@ export default function VotingPage() {
       .eq("status", "approved");
 
     // Fetch all votes
-    const { data: votes } = await supabase.from("votes").select("photo_id");
+    const { data: votes } = await supabase
+      .from("votes")
+      .select("photo_id, voter_name, created_at");
 
     if (photos && votes) {
       const counts: Record<string, number> = {};
+      const voterMap: Record<string, VoterInfo[]> = {};
       votes.forEach((v) => {
         counts[v.photo_id] = (counts[v.photo_id] || 0) + 1;
+        if (!voterMap[v.photo_id]) voterMap[v.photo_id] = [];
+        voterMap[v.photo_id].push({ voter_name: v.voter_name, created_at: v.created_at });
       });
 
       const ranked = photos
-        .map((p) => ({ ...p, vote_count: counts[p.id] || 0 }))
+        .map((p) => ({ ...p, vote_count: counts[p.id] || 0, voters: voterMap[p.id] || [] }))
         .sort((a, b) => b.vote_count - a.vote_count);
 
       setRankings(ranked);
       setTotalVotes(votes.length);
 
-      // Set voted photos
-      const votedIds = getMyVotes();
-      setMyVotes(votedIds);
-      setMyVotedPhotos(photos.filter((p) => votedIds.includes(p.id)));
+      // Sync localStorage with DB: check which of our local votes still exist
+      const deviceId = getDeviceId();
+      const { data: myDbVotes } = await supabase
+        .from("votes")
+        .select("photo_id")
+        .eq("device_id", deviceId);
+      const dbVotedIds = myDbVotes ? myDbVotes.map((v) => v.photo_id) : [];
+      // Update localStorage to match DB
+      if (typeof window !== "undefined") {
+        localStorage.setItem("sergi_my_votes", JSON.stringify(dbVotedIds));
+      }
+      setMyVotes(dbVotedIds);
+      setMyVotedPhotos(photos.filter((p) => dbVotedIds.includes(p.id)));
     }
     setLoading(false);
   }, []);
@@ -68,9 +92,35 @@ export default function VotingPage() {
       setMyVotes(removeMyVote(photoId));
     } else {
       if (myVotes.length >= MAX_VOTES) return;
-      await supabase
+      const [fingerprint, ip] = await Promise.all([
+        getFingerprint(),
+        getClientIp(),
+      ]);
+
+      // Check if this fingerprint+ip already voted for this photo
+      const { data: existing } = await supabase
         .from("votes")
-        .insert({ photo_id: photoId, device_id: deviceId });
+        .select("id")
+        .eq("photo_id", photoId)
+        .eq("fingerprint", fingerprint)
+        .eq("ip_address", ip);
+
+      if (existing && existing.length > 0) {
+        setMyVotes(addMyVote(photoId));
+        fetchData();
+        return;
+      }
+
+      const currentName = nameInput.trim() || null;
+      if (currentName) setVoterName(currentName);
+
+      await supabase.from("votes").insert({
+        photo_id: photoId,
+        device_id: deviceId,
+        fingerprint,
+        ip_address: ip,
+        voter_name: currentName,
+      });
       setMyVotes(addMyVote(photoId));
     }
     fetchData();
@@ -97,6 +147,19 @@ export default function VotingPage() {
           >
             Halkın oyuyla öne çıkan eserler. Gerçek zamanlı oy durumu.
           </p>
+          {/* Mobile name input */}
+          <div className="mt-4 lg:hidden">
+            <input
+              type="text"
+              value={nameInput}
+              onChange={(e) => {
+                setNameInput(e.target.value);
+                setVoterName(e.target.value);
+              }}
+              placeholder="İsmin (isteğe bağlı)"
+              className="w-full max-w-xs px-3 py-2 rounded-lg text-sm border border-(--border) bg-transparent focus:border-primary focus:outline-none transition-colors"
+            />
+          </div>
         </motion.div>
 
         <div className="flex flex-col lg:flex-row gap-8">
@@ -166,6 +229,22 @@ export default function VotingPage() {
                           {pct}%
                         </span>
                       </div>
+
+                      {/* Voters */}
+                      {photo.voters.length > 0 && (
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          {photo.voters.slice(0, 5).map((v, vi) => (
+                            <span key={vi} className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: "var(--elevated)", color: "var(--text-secondary)" }}>
+                              {v.voter_name || "Anonim"}
+                            </span>
+                          ))}
+                          {photo.voters.length > 5 && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full text-primary" style={{ background: "var(--elevated)" }}>
+                              +{photo.voters.length - 5}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {/* Vote button */}
@@ -198,6 +277,23 @@ export default function VotingPage() {
             className="lg:w-72 shrink-0"
           >
             <div className="glass rounded-xl p-5 sticky top-24">
+              {/* Name input - desktop only */}
+              <div className="mb-4 hidden lg:block">
+                <label className="text-xs uppercase tracking-widest font-semibold block mb-2" style={{ color: "var(--text-secondary)" }}>
+                  İsmin (isteğe bağlı)
+                </label>
+                <input
+                  type="text"
+                  value={nameInput}
+                  onChange={(e) => {
+                    setNameInput(e.target.value);
+                    setVoterName(e.target.value);
+                  }}
+                  placeholder="Anonim"
+                  className="w-full px-3 py-2 rounded-lg text-sm border border-(--border) bg-transparent focus:border-primary focus:outline-none transition-colors"
+                />
+              </div>
+
               <div className="flex items-center gap-2 mb-4">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#78BE20" strokeWidth="2">
                   <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />

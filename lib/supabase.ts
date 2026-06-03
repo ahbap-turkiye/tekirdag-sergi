@@ -41,4 +41,8 @@ export type Vote = {
   id: string;
   photo_id: string;
   device_id: string;
+  fingerprint: string;
+  ip_address: string;
+  voter_name: string | null;
+  created_at: string;
 };
