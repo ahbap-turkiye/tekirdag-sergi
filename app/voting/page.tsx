@@ -97,13 +97,12 @@ export default function VotingPage() {
         getClientIp(),
       ]);
 
-      // Check if this fingerprint+ip already voted for this photo
+      // Check if this fingerprint already voted for this photo
       const { data: existing } = await supabase
         .from("votes")
         .select("id")
         .eq("photo_id", photoId)
-        .eq("fingerprint", fingerprint)
-        .eq("ip_address", ip);
+        .eq("fingerprint", fingerprint);
 
       if (existing && existing.length > 0) {
         setMyVotes(addMyVote(photoId));
