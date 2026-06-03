@@ -21,6 +21,9 @@ export const metadata: Metadata = {
   title: "Tekirdağ'ın Gözünden | Dijital Fotoğraf Sergisi",
   description:
     "Ahbap Tekirdağ gönüllüleri tarafından hazırlanan dijital fotoğraf sergisi. Tekirdağ'ın doğasını, kültürünü ve yaşamını keşfedin.",
+  icons: {
+    icon: "/favicon.png",
+  },
 };
 
 export default function RootLayout({
