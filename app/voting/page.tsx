@@ -195,6 +195,11 @@ export default function VotingPage() {
                 const voted = myVotes.includes(photo.id);
                 const canVote = myVotes.length < MAX_VOTES || voted;
 
+                // Calculate rank based on vote count (same votes = same rank)
+                const rank = i === 0 ? 0 : rankings[i - 1].vote_count === photo.vote_count
+                  ? rankings.findIndex((r) => r.vote_count === photo.vote_count)
+                  : i;
+
                 return (
                   <motion.div
                     key={photo.id}
@@ -211,9 +216,9 @@ export default function VotingPage() {
                         alt={photo.title}
                         className="w-full h-full object-cover"
                       />
-                      {i < 3 && (
+                      {rank < 3 && (
                         <div className="absolute top-1 left-1 w-7 h-7 rounded-md glass flex items-center justify-center text-sm">
-                          {medals[i]}
+                          {medals[rank]}
                         </div>
                       )}
                     </div>
