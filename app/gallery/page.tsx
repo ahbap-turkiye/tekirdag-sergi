@@ -25,6 +25,7 @@ export default function GalleryPage() {
   const [totalVotes, setTotalVotes] = useState(0);
   const [nameInput, setNameInput] = useState("");
   const [nameError, setNameError] = useState("");
+  const [voting, setVoting] = useState(false);
 
   useEffect(() => {
     setNameInput(getVoterName());
@@ -80,6 +81,9 @@ export default function GalleryPage() {
   }, [fetchPhotos, fetchVoteCounts, syncMyVotes]);
 
   const handleVote = async (photoId: string) => {
+    if (voting) return;
+    setVoting(true);
+    try {
     const deviceId = getDeviceId();
     const alreadyVoted = myVotes.includes(photoId);
 
@@ -91,7 +95,7 @@ export default function GalleryPage() {
         .eq("device_id", deviceId);
       setMyVotes(removeMyVote(photoId));
     } else {
-      if (myVotes.length >= MAX_VOTES) return;
+      if (myVotes.length >= MAX_VOTES) { setVoting(false); return; }
       const [fingerprint, ip] = await Promise.all([
         getFingerprint(),
         getClientIp(),
@@ -105,9 +109,9 @@ export default function GalleryPage() {
         .eq("fingerprint", fingerprint);
 
       if (existing && existing.length > 0) {
-        // Already voted from this device/network
         setMyVotes(addMyVote(photoId));
-        fetchVoteCounts();
+        await fetchVoteCounts();
+        setVoting(false);
         return;
       }
 
@@ -123,6 +127,7 @@ export default function GalleryPage() {
           .limit(1);
         if (nameTaken && nameTaken.length > 0) {
           setNameError("Bu isim başka bir cihazda kullanılıyor. Farklı bir isim dene.");
+          setVoting(false);
           return;
         }
         setVoterName(currentName);
@@ -138,7 +143,10 @@ export default function GalleryPage() {
       });
       setMyVotes(addMyVote(photoId));
     }
-    fetchVoteCounts();
+    await fetchVoteCounts();
+    } finally {
+      setVoting(false);
+    }
   };
 
   return (

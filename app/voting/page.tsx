@@ -26,6 +26,7 @@ export default function VotingPage() {
   const [loading, setLoading] = useState(true);
   const [nameInput, setNameInput] = useState("");
   const [nameError, setNameError] = useState("");
+  const [voting, setVoting] = useState(false);
 
   useEffect(() => {
     setNameInput(getVoterName());
@@ -81,6 +82,9 @@ export default function VotingPage() {
   }, [fetchData]);
 
   const handleVote = async (photoId: string) => {
+    if (voting) return;
+    setVoting(true);
+    try {
     const deviceId = getDeviceId();
     const alreadyVoted = myVotes.includes(photoId);
 
@@ -123,6 +127,7 @@ export default function VotingPage() {
           .limit(1);
         if (nameTaken && nameTaken.length > 0) {
           setNameError("Bu isim başka bir cihazda kullanılıyor. Farklı bir isim dene.");
+          setVoting(false);
           return;
         }
         setVoterName(currentName);
@@ -138,7 +143,10 @@ export default function VotingPage() {
       });
       setMyVotes(addMyVote(photoId));
     }
-    fetchData();
+    await fetchData();
+    } finally {
+      setVoting(false);
+    }
   };
 
   const medals = ["🥇", "🥈", "🥉"];
