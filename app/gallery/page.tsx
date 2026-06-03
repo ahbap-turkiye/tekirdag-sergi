@@ -24,6 +24,7 @@ export default function GalleryPage() {
   const [voters, setVoters] = useState<Record<string, Pick<Vote, "voter_name" | "created_at">[]>>({});
   const [totalVotes, setTotalVotes] = useState(0);
   const [nameInput, setNameInput] = useState("");
+  const [nameError, setNameError] = useState("");
 
   useEffect(() => {
     setNameInput(getVoterName());
@@ -111,7 +112,22 @@ export default function GalleryPage() {
       }
 
       const currentName = nameInput.trim() || null;
-      if (currentName) setVoterName(currentName);
+
+      // Check if this name is already used by a different device
+      if (currentName) {
+        const { data: nameTaken } = await supabase
+          .from("votes")
+          .select("id")
+          .eq("voter_name", currentName)
+          .neq("fingerprint", fingerprint)
+          .limit(1);
+        if (nameTaken && nameTaken.length > 0) {
+          setNameError("Bu isim başka bir cihazda kullanılıyor. Farklı bir isim dene.");
+          return;
+        }
+        setVoterName(currentName);
+      }
+      setNameError("");
 
       await supabase.from("votes").insert({
         photo_id: photoId,
@@ -183,8 +199,9 @@ export default function GalleryPage() {
                 setVoterName(e.target.value);
               }}
               placeholder="İsmin (isteğe bağlı)"
-              className="w-full px-3 py-1.5 rounded-lg text-sm border border-(--border) bg-transparent focus:border-primary focus:outline-none transition-colors"
+              className={`w-full px-3 py-1.5 rounded-lg text-sm border bg-transparent focus:outline-none transition-colors ${nameError ? "border-red-500" : "border-(--border) focus:border-primary"}`}
             />
+            {nameError && <p className="text-red-400 text-xs mt-1">{nameError}</p>}
           </motion.div>
         </div>
 
