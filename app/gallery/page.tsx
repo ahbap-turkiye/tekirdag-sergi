@@ -295,6 +295,7 @@ function GalleryCard({
 }) {
   const percentage = totalVotes > 0 ? Math.round((voteCount / totalVotes) * 100) : 0;
   const [downloading, setDownloading] = useState(false);
+  const [imgLoaded, setImgLoaded] = useState(false);
 
   return (
     <motion.div
@@ -306,6 +307,9 @@ function GalleryCard({
     >
       {/* Image */}
       <div className="relative overflow-hidden" onClick={onSelect}>
+        {!imgLoaded && (
+          <div className="shimmer w-full" style={{ aspectRatio: "4/3" }} />
+        )}
         <picture>
           {photo.mobile_image_url && (
             <source media="(max-width: 768px)" srcSet={photo.mobile_image_url} />
@@ -314,7 +318,13 @@ function GalleryCard({
             src={photo.image_url}
             alt={photo.title}
             className="w-full object-cover img-zoom"
-            loading="lazy"
+            style={{
+              opacity: imgLoaded ? 1 : 0,
+              filter: imgLoaded ? "blur(0px)" : "blur(20px)",
+              transform: imgLoaded ? "scale(1)" : "scale(1.05)",
+              transition: "opacity 0.6s ease, filter 0.6s ease, transform 0.6s ease",
+            }}
+            onLoad={() => setImgLoaded(true)}
           />
         </picture>
         {/* Gradient overlay */}
