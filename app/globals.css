@@ -350,3 +350,8 @@ textarea:focus {
   );
   animation: introScanPulse 2s ease infinite;
 }
+
+/* Fullscreen mode: hide chrome, let content fill */
+:fullscreen nav { display: none !important; }
+:fullscreen footer { display: none !important; }
+:fullscreen main { padding-top: 0 !important; height: 100vh !important; }

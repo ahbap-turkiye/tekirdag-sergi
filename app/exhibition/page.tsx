@@ -9,6 +9,21 @@ export default function ExhibitionPage() {
   const [current, setCurrent] = useState(0);
   const [loading, setLoading] = useState(true);
   const [autoPlay, setAutoPlay] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen();
+    } else {
+      document.exitFullscreen();
+    }
+  };
+
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", handler);
+    return () => document.removeEventListener("fullscreenchange", handler);
+  }, []);
 
   const fetchPhotos = useCallback(async () => {
     const { data } = await supabase
@@ -29,7 +44,7 @@ export default function ExhibitionPage() {
     if (!autoPlay || photos.length === 0) return;
     const timer = setInterval(() => {
       setCurrent((c) => (c + 1) % photos.length);
-    }, 6000);
+    }, 5000);
     return () => clearInterval(timer);
   }, [autoPlay, photos.length]);
 
@@ -88,13 +103,13 @@ export default function ExhibitionPage() {
   return (
     <div className="min-h-screen relative overflow-hidden bg-black">
       {/* Fullscreen photo with crossfade */}
-      <AnimatePresence mode="wait">
+      <AnimatePresence>
         <motion.div
           key={photo.id}
-          initial={{ opacity: 0, scale: 1.05 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.98 }}
-          transition={{ duration: 1.5, ease: [0.25, 0.46, 0.45, 0.94] }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 1.2, ease: "easeInOut" }}
           className="absolute inset-0"
         >
           <picture>
@@ -114,7 +129,7 @@ export default function ExhibitionPage() {
       </AnimatePresence>
 
       {/* HUD Overlay */}
-      <div className="absolute inset-0 z-10 flex flex-col justify-between p-5 md:p-16">
+      <div className="absolute inset-0 z-10 flex flex-col justify-between p-5 pb-14 md:p-10 md:pb-18">
         {/* Top bar */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -122,7 +137,7 @@ export default function ExhibitionPage() {
           transition={{ delay: 0.5 }}
           className="flex items-center justify-between"
         >
-          <div className="glass rounded-lg px-4 py-2">
+          <div className="glass rounded-lg px-4 py-2.5 h-10 flex items-center">
             <span className="text-xs uppercase tracking-widest font-semibold text-primary">
               Sergi
             </span>
@@ -133,7 +148,7 @@ export default function ExhibitionPage() {
 
           <button
             onClick={() => setAutoPlay(!autoPlay)}
-            className="glass rounded-lg px-4 py-2 flex items-center gap-2 hover:border-primary transition-all"
+            className="glass rounded-lg px-4 py-2.5 h-10 flex items-center gap-2 hover:border-primary transition-all"
           >
             {autoPlay ? (
               <svg width="14" height="14" viewBox="0 0 24 24" fill="white" stroke="none">
@@ -145,7 +160,7 @@ export default function ExhibitionPage() {
                 <polygon points="5 3 19 12 5 21 5 3" />
               </svg>
             )}
-            <span className="text-xs font-medium text-white">
+            <span className="text-xs uppercase tracking-widest font-semibold text-white">
               {autoPlay ? "Duraklat" : "Oynat"}
             </span>
           </button>
@@ -156,10 +171,10 @@ export default function ExhibitionPage() {
           <AnimatePresence mode="wait">
             <motion.div
               key={photo.id}
-              initial={{ opacity: 0, y: 30 }}
+              initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.8 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.6, ease: "easeInOut" }}
               className="max-w-xl"
             >
               <h2 className="font-display text-3xl md:text-5xl font-bold text-white mb-3">
@@ -231,20 +246,40 @@ export default function ExhibitionPage() {
             </div>
           </div>
 
-          {/* Auto-play progress bar */}
-          {autoPlay && (
-            <div className="mt-4 h-0.5 w-full max-w-xl rounded-full bg-white/10 overflow-hidden">
-              <motion.div
-                key={`progress-${current}`}
-                className="h-full bg-primary rounded-full progress-glow"
-                initial={{ width: "0%" }}
-                animate={{ width: "100%" }}
-                transition={{ duration: 6, ease: "linear" }}
-              />
-            </div>
-          )}
+          {/* Auto-play progress bar + Fullscreen */}
+          <div className="mt-4 flex items-center gap-4">
+            {autoPlay ? (
+              <div className="h-0.5 flex-1 max-w-xl rounded-full bg-white/10 overflow-hidden">
+                <motion.div
+                  key={`progress-${current}`}
+                  className="h-full bg-primary rounded-full progress-glow"
+                  initial={{ width: "0%" }}
+                  animate={{ width: "100%" }}
+                  transition={{ duration: 5, ease: "linear" }}
+                />
+              </div>
+            ) : (
+              <div className="flex-1" />
+            )}
+            <button
+              onClick={toggleFullscreen}
+              className="w-10 h-10 rounded-full glass flex items-center justify-center hover:border-primary transition-all group shrink-0 ml-auto"
+              title={isFullscreen ? "Tam ekrandan çık" : "Tam ekran"}
+            >
+              {isFullscreen ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" className="group-hover:stroke-primary transition-colors">
+                  <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" />
+                </svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" className="group-hover:stroke-primary transition-colors">
+                  <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+                </svg>
+              )}
+            </button>
+          </div>
         </div>
       </div>
+
     </div>
   );
 }
