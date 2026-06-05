@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase, type Photo } from "@/lib/supabase";
+import ImageCropper from "@/components/ImageCropper";
 
 const MAX_STORY = 300;
 
@@ -13,6 +14,10 @@ export default function SubmissionsPage() {
   const [story, setStory] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [desktopBlob, setDesktopBlob] = useState<Blob | null>(null);
+  const [mobileBlob, setMobileBlob] = useState<Blob | null>(null);
+  const [croppedPreviewUrl, setCroppedPreviewUrl] = useState<string | null>(null);
+  const [mobilePreviewUrl, setMobilePreviewUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -25,6 +30,7 @@ export default function SubmissionsPage() {
   const [adminPassword, setAdminPassword] = useState("");
   const [adminError, setAdminError] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "";
 
@@ -71,31 +77,49 @@ export default function SubmissionsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file || !title || !author) return;
+    if ((!file && !desktopBlob) || !title || !author) return;
 
     setUploading(true);
     try {
-      const ext = file.name.split(".").pop();
-      const fileName = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+      const ts = Date.now();
+      const rand = Math.random().toString(36).slice(2);
 
-      const { error: uploadError } = await supabase.storage
+      // Upload desktop version
+      const desktopName = `${ts}_${rand}_desktop.jpeg`;
+      const { error: desktopErr } = await supabase.storage
         .from("photos")
-        .upload(fileName, file);
+        .upload(desktopName, desktopBlob || file!);
+      if (desktopErr) throw desktopErr;
 
-      if (uploadError) throw uploadError;
-
-      const { data: urlData } = supabase.storage
+      const { data: desktopUrl } = supabase.storage
         .from("photos")
-        .getPublicUrl(fileName);
+        .getPublicUrl(desktopName);
 
-      await supabase.from("photos").insert({
+      // Upload mobile version
+      let mobilePublicUrl: string | null = null;
+      if (mobileBlob) {
+        const mobileName = `${ts}_${rand}_mobile.jpeg`;
+        const { error: mobileErr } = await supabase.storage
+          .from("photos")
+          .upload(mobileName, mobileBlob);
+        if (mobileErr) throw mobileErr;
+
+        const { data: mobileUrl } = supabase.storage
+          .from("photos")
+          .getPublicUrl(mobileName);
+        mobilePublicUrl = mobileUrl.publicUrl;
+      }
+
+      const { error: insertError } = await supabase.from("photos").insert({
         title,
         author,
         location,
         story,
-        image_url: urlData.publicUrl,
+        image_url: desktopUrl.publicUrl,
+        mobile_image_url: mobilePublicUrl,
         status: "pending",
       });
+      if (insertError) throw insertError;
 
       setSuccess(true);
       setTitle("");
@@ -104,6 +128,11 @@ export default function SubmissionsPage() {
       setStory("");
       setFile(null);
       setPreview(null);
+      setDesktopBlob(null);
+      setMobileBlob(null);
+      setCroppedPreviewUrl(null);
+      setMobilePreviewUrl(null);
+      if (isAdmin) fetchPending();
       setTimeout(() => setSuccess(false), 4000);
     } catch (err) {
       console.error(err);
@@ -136,58 +165,93 @@ export default function SubmissionsPage() {
             </p>
 
             <form onSubmit={handleSubmit} className="space-y-5">
-              {/* File Upload */}
-              <div
-                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-                onDragLeave={() => setDragOver(false)}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setDragOver(false);
-                  const f = e.dataTransfer.files[0];
+              {/* File Upload / Cropper / Preview */}
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/jpeg,image/png"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
                   if (f) handleFile(f);
                 }}
-                onClick={() => fileRef.current?.click()}
-                className={`relative rounded-xl border-2 border-dashed p-8 text-center cursor-pointer transition-all duration-300 ${
-                  dragOver
-                    ? "border-primary bg-primary/5"
-                    : preview
-                    ? "border-primary/50"
-                    : "border-(--border) hover:border-primary/50"
-                }`}
-              >
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept="image/jpeg,image/png"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) handleFile(f);
+              />
+
+              {croppedPreviewUrl ? (
+                /* Cropped result preview */
+                <div className="relative rounded-xl border-2 border-primary/50 p-4">
+                  <div className="flex gap-4 items-start">
+                    <div className="flex-1">
+                      <p className="text-xs font-semibold mb-1.5" style={{ color: "var(--text-secondary)" }}>Masaüstü</p>
+                      <img
+                        src={croppedPreviewUrl}
+                        alt="Desktop preview"
+                        className="w-full rounded-lg object-cover"
+                        style={{ aspectRatio: "16/9" }}
+                      />
+                    </div>
+                    {mobilePreviewUrl && (
+                      <div className="w-20 shrink-0">
+                        <p className="text-xs font-semibold mb-1.5" style={{ color: "var(--text-secondary)" }}>Mobil</p>
+                        <img
+                          src={mobilePreviewUrl}
+                          alt="Mobile preview"
+                          className="w-full rounded-lg object-cover"
+                          style={{ aspectRatio: "4/5" }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFile(null);
+                      setPreview(null);
+                      setDesktopBlob(null);
+                      setMobileBlob(null);
+                      setCroppedPreviewUrl(null);
+                      setMobilePreviewUrl(null);
+                    }}
+                    className="absolute top-2 right-2 w-8 h-8 rounded-full glass flex items-center justify-center hover:border-red-400 transition-colors"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M18 6L6 18M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ) : preview ? (
+                /* Cropper */
+                <ImageCropper
+                  image={preview}
+                  onCropDone={(dBlob, mBlob) => {
+                    setDesktopBlob(dBlob);
+                    setMobileBlob(mBlob);
+                    setCroppedPreviewUrl(URL.createObjectURL(dBlob));
+                    setMobilePreviewUrl(URL.createObjectURL(mBlob));
+                  }}
+                  onCancel={() => {
+                    setFile(null);
+                    setPreview(null);
                   }}
                 />
-
-                {preview ? (
-                  <div className="relative">
-                    <img
-                      src={preview}
-                      alt="Preview"
-                      className="max-h-64 mx-auto rounded-lg object-contain"
-                    />
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setFile(null);
-                        setPreview(null);
-                      }}
-                      className="absolute top-2 right-2 w-8 h-8 rounded-full glass flex items-center justify-center hover:border-red-400 transition-colors"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M18 6L6 18M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
-                ) : (
+              ) : (
+                /* Drop zone */
+                <div
+                  onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragOver(false);
+                    const f = e.dataTransfer.files[0];
+                    if (f) handleFile(f);
+                  }}
+                  onClick={() => fileRef.current?.click()}
+                  className={`relative rounded-xl border-2 border-dashed p-8 text-center cursor-pointer transition-all duration-300 ${
+                    dragOver
+                      ? "border-primary bg-primary/5"
+                      : "border-(--border) hover:border-primary/50"
+                  }`}
+                >
                   <div className="py-8">
                     <svg
                       width="40"
@@ -207,8 +271,8 @@ export default function SubmissionsPage() {
                       JPEG, PNG - max 20MB
                     </p>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
 
               {/* Title */}
               <div>
@@ -301,7 +365,7 @@ export default function SubmissionsPage() {
               {/* Submit Button */}
               <button
                 type="submit"
-                disabled={uploading || !file || !title || !author}
+                disabled={uploading || !desktopBlob || !title || !author}
                 className="w-full py-4 rounded-xl bg-primary text-black font-semibold text-sm flex items-center justify-center gap-2 transition-all duration-300 hover:bg-primary-light hover:shadow-[0_0_30px_rgba(120,190,32,0.4)] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:shadow-none"
               >
                 {uploading ? (
@@ -377,15 +441,38 @@ export default function SubmissionsPage() {
                       className="luminous-border rounded-xl overflow-hidden"
                       style={{ background: "var(--card)" }}
                     >
-                      <div className="relative">
-                        <img
-                          src={photo.image_url}
-                          alt={photo.title}
-                          className="w-full h-48 object-cover"
-                        />
-                        <span className="absolute top-2 left-2 px-2 py-1 rounded-md text-xs font-bold bg-yellow-500/90 text-black">
-                          BEKLİYOR
-                        </span>
+                      <div>
+                        <div className="flex gap-2 p-3">
+                          {/* Desktop preview */}
+                          <div className="flex-1">
+                            <p className="text-[10px] font-semibold mb-1" style={{ color: "var(--text-secondary)" }}>Masaüstü</p>
+                            <img
+                              src={photo.image_url}
+                              alt={photo.title}
+                              className="w-full rounded-lg object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                              style={{ aspectRatio: "16/9" }}
+                              onClick={() => setLightboxUrl(photo.image_url)}
+                            />
+                          </div>
+                          {/* Mobile preview */}
+                          {photo.mobile_image_url && (
+                            <div className="w-28 shrink-0">
+                              <p className="text-[10px] font-semibold mb-1" style={{ color: "var(--text-secondary)" }}>Mobil</p>
+                              <img
+                                src={photo.mobile_image_url}
+                                alt={`${photo.title} mobil`}
+                                className="w-full rounded-lg object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                                style={{ aspectRatio: "4/5" }}
+                                onClick={() => setLightboxUrl(photo.mobile_image_url!)}
+                              />
+                            </div>
+                          )}
+                        </div>
+                        <div className="px-3 pb-1">
+                          <span className="px-2 py-1 rounded-md text-xs font-bold bg-yellow-500/90 text-black">
+                            BEKLİYOR
+                          </span>
+                        </div>
                       </div>
                       <div className="p-4">
                         <h3 className="font-display text-base font-semibold mb-1">
@@ -523,6 +610,36 @@ export default function SubmissionsPage() {
                   </div>
                 </form>
               </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Lightbox */}
+        <AnimatePresence>
+          {lightboxUrl && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-xl"
+              onClick={() => setLightboxUrl(null)}
+            >
+              <motion.img
+                initial={{ scale: 0.9 }}
+                animate={{ scale: 1 }}
+                exit={{ scale: 0.9 }}
+                src={lightboxUrl}
+                className="max-w-full max-h-[90vh] object-contain rounded-lg"
+                onClick={(e) => e.stopPropagation()}
+              />
+              <button
+                onClick={() => setLightboxUrl(null)}
+                className="absolute top-4 right-4 w-10 h-10 rounded-full glass flex items-center justify-center hover:border-primary transition-all"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
             </motion.div>
           )}
         </AnimatePresence>

@@ -33,6 +33,7 @@ export type Photo = {
   location: string;
   story: string;
   image_url: string;
+  mobile_image_url: string | null;
   status: "pending" | "approved" | "rejected";
   created_at: string;
 };

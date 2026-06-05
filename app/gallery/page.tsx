@@ -294,6 +294,7 @@ function GalleryCard({
   onSelect: () => void;
 }) {
   const percentage = totalVotes > 0 ? Math.round((voteCount / totalVotes) * 100) : 0;
+  const [downloading, setDownloading] = useState(false);
 
   return (
     <motion.div
@@ -305,14 +306,53 @@ function GalleryCard({
     >
       {/* Image */}
       <div className="relative overflow-hidden" onClick={onSelect}>
-        <img
-          src={photo.image_url}
-          alt={photo.title}
-          className="w-full object-cover img-zoom"
-          loading="lazy"
-        />
+        <picture>
+          {photo.mobile_image_url && (
+            <source media="(max-width: 768px)" srcSet={photo.mobile_image_url} />
+          )}
+          <img
+            src={photo.image_url}
+            alt={photo.title}
+            className="w-full object-cover img-zoom"
+            loading="lazy"
+          />
+        </picture>
         {/* Gradient overlay */}
         <div className="absolute inset-0 cinematic-overlay opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+
+        {/* Download button */}
+        <button
+          disabled={downloading}
+          className={`absolute top-2 right-2 w-8 h-8 rounded-full glass flex items-center justify-center md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-300 hover:border-primary z-10 ${downloading ? "opacity-50 cursor-wait" : ""}`}
+          title="İndir"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (downloading) return;
+            setDownloading(true);
+            fetch(photo.image_url)
+              .then((res) => res.blob())
+              .then((blob) => {
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(blob);
+                a.download = `${photo.title || "foto"}.jpg`;
+                a.click();
+                URL.revokeObjectURL(a.href);
+              })
+              .finally(() => setDownloading(false));
+          }}
+        >
+          {downloading ? (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" className="animate-spin">
+              <circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="10" />
+            </svg>
+          ) : (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+          )}
+        </button>
 
         {/* Hover info */}
         <div className="absolute bottom-0 left-0 right-0 p-4 translate-y-full group-hover:translate-y-0 transition-transform duration-500">
@@ -398,6 +438,7 @@ function PhotoModal({
   onClose: () => void;
 }) {
   const percentage = totalVotes > 0 ? Math.round((voteCount / totalVotes) * 100) : 0;
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -431,23 +472,62 @@ function PhotoModal({
         className="relative max-w-5xl w-full max-h-[90vh] flex flex-col md:flex-row gap-6 overflow-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Close */}
-        <button
-          onClick={onClose}
-          className="absolute top-2 right-2 z-10 w-10 h-10 rounded-full glass flex items-center justify-center hover:border-primary transition-all"
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M18 6L6 18M6 6l12 12" />
-          </svg>
-        </button>
+        {/* Top buttons */}
+        <div className="absolute top-2 right-2 z-10 flex items-center gap-2">
+          <button
+            disabled={downloading}
+            className={`w-10 h-10 rounded-full glass flex items-center justify-center hover:border-primary transition-all ${downloading ? "opacity-50 cursor-wait" : ""}`}
+            title="İndir"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (downloading) return;
+              setDownloading(true);
+              fetch(photo.image_url)
+                .then((res) => res.blob())
+                .then((blob) => {
+                  const a = document.createElement("a");
+                  a.href = URL.createObjectURL(blob);
+                  a.download = `${photo.title || "foto"}.jpg`;
+                  a.click();
+                  URL.revokeObjectURL(a.href);
+                })
+                .finally(() => setDownloading(false));
+            }}
+          >
+            {downloading ? (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin">
+                <circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="10" />
+              </svg>
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+            )}
+          </button>
+          <button
+            onClick={onClose}
+            className="w-10 h-10 rounded-full glass flex items-center justify-center hover:border-primary transition-all"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
 
         {/* Image */}
         <div className="flex-1 min-h-0">
-          <img
-            src={photo.image_url}
-            alt={photo.title}
-            className="w-full h-full object-contain rounded-lg"
-          />
+          <picture>
+            {photo.mobile_image_url && (
+              <source media="(max-width: 768px)" srcSet={photo.mobile_image_url} />
+            )}
+            <img
+              src={photo.image_url}
+              alt={photo.title}
+              className="w-full h-full object-contain rounded-lg"
+            />
+          </picture>
         </div>
 
         {/* Info Panel */}

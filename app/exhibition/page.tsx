@@ -97,11 +97,16 @@ export default function ExhibitionPage() {
           transition={{ duration: 1.5, ease: [0.25, 0.46, 0.45, 0.94] }}
           className="absolute inset-0"
         >
-          <img
-            src={photo.image_url}
-            alt={photo.title}
-            className="w-full h-full object-cover"
-          />
+          <picture>
+            {photo.mobile_image_url && (
+              <source media="(max-width: 768px)" srcSet={photo.mobile_image_url} />
+            )}
+            <img
+              src={photo.image_url}
+              alt={photo.title}
+              className="w-full h-full object-cover"
+            />
+          </picture>
           {/* Cinematic vignette */}
           <div className="absolute inset-0 bg-linear-to-t from-black/80 via-black/20 to-black/40" />
           <div className="absolute inset-0 bg-linear-to-r from-black/30 via-transparent to-black/30" />

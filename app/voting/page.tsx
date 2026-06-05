@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { supabase, type Photo, type Vote } from "@/lib/supabase";
 import {
   getDeviceId,
@@ -28,6 +28,7 @@ export default function VotingPage() {
   const [voting, setVoting] = useState(false);
   const [cachedFp, setCachedFp] = useState("");
   const [cachedIp, setCachedIp] = useState("");
+  const [lightbox, setLightbox] = useState<string | null>(null);
 
   useEffect(() => {
     setNameInput(getVoterName());
@@ -231,7 +232,10 @@ export default function VotingPage() {
                     style={{ background: "var(--card)" }}
                   >
                     {/* Thumbnail */}
-                    <div className="relative w-24 h-20 md:w-32 md:h-24 shrink-0 rounded-lg overflow-hidden">
+                    <div
+                      className="relative w-24 h-20 md:w-32 md:h-24 shrink-0 rounded-lg overflow-hidden cursor-pointer"
+                      onClick={() => setLightbox(photo.image_url)}
+                    >
                       <img
                         src={photo.image_url}
                         alt={photo.title}
@@ -393,6 +397,36 @@ export default function VotingPage() {
           </motion.div>
         </div>
       </div>
+
+      {/* Lightbox */}
+      <AnimatePresence>
+        {lightbox && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-xl"
+            onClick={() => setLightbox(null)}
+          >
+            <motion.img
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.9 }}
+              src={lightbox}
+              className="max-w-full max-h-[90vh] object-contain rounded-lg"
+              onClick={(e) => e.stopPropagation()}
+            />
+            <button
+              onClick={() => setLightbox(null)}
+              className="absolute top-4 right-4 w-10 h-10 rounded-full glass flex items-center justify-center hover:border-primary transition-all"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
