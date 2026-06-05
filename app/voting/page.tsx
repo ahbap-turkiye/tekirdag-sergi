@@ -7,7 +7,6 @@ import {
   getDeviceId,
   getFingerprint,
   getClientIp,
-  getMyVotes,
   addMyVote,
   removeMyVote,
   getVoterName,
@@ -89,39 +88,32 @@ export default function VotingPage() {
   const handleVote = async (photoId: string) => {
     if (voting) return;
     setVoting(true);
-    try {
     const deviceId = getDeviceId();
     const alreadyVoted = myVotes.includes(photoId);
     const fingerprint = cachedFp || await getFingerprint();
     const ip = cachedIp || await getClientIp();
+    const currentName = nameInput.trim() || null;
 
     if (alreadyVoted) {
-      // Optimistic: update UI immediately
-      setMyVotes(removeMyVote(photoId));
-      await supabase
-        .from("votes")
-        .delete()
-        .eq("photo_id", photoId)
-        .eq("device_id", deviceId);
+      // Optimistic: update ALL UI state immediately
+      const newVotes = removeMyVote(photoId);
+      setMyVotes(newVotes);
+      setRankings((prev) =>
+        prev.map((p) =>
+          p.id === photoId
+            ? { ...p, vote_count: Math.max(0, p.vote_count - 1), voters: p.voters.slice(0, -1) }
+            : p
+        ).sort((a, b) => b.vote_count - a.vote_count)
+      );
+      setTotalVotes((t) => Math.max(0, t - 1));
+      setMyVotedPhotos((prev) => prev.filter((p) => p.id !== photoId));
+
+      // DB in background (no re-fetch needed, UI already updated)
+      supabase.from("votes").delete().eq("photo_id", photoId).eq("device_id", deviceId);
     } else {
-      if (myVotes.length >= MAX_VOTES) return;
+      if (myVotes.length >= MAX_VOTES) { setVoting(false); return; }
 
-      // Check if this fingerprint already voted for this photo
-      const { data: existing } = await supabase
-        .from("votes")
-        .select("id")
-        .eq("photo_id", photoId)
-        .eq("fingerprint", fingerprint);
-
-      if (existing && existing.length > 0) {
-        setMyVotes(addMyVote(photoId));
-        fetchData();
-        return;
-      }
-
-      const currentName = nameInput.trim() || null;
-
-      // Check if this name is already used by a different device
+      // Name check (must await - can block vote)
       if (currentName) {
         const { data: nameTaken } = await supabase
           .from("votes")
@@ -138,21 +130,36 @@ export default function VotingPage() {
       }
       setNameError("");
 
-      // Optimistic: update UI immediately
-      setMyVotes(addMyVote(photoId));
-      await supabase.from("votes").insert({
-        photo_id: photoId,
-        device_id: deviceId,
-        fingerprint,
-        ip_address: ip,
-        voter_name: currentName,
+      // Optimistic: update ALL UI state immediately
+      const newVotes = addMyVote(photoId);
+      setMyVotes(newVotes);
+      const voterEntry: VoterInfo = { voter_name: currentName, created_at: new Date().toISOString() };
+      setRankings((prev) =>
+        prev.map((p) =>
+          p.id === photoId
+            ? { ...p, vote_count: p.vote_count + 1, voters: [...p.voters, voterEntry] }
+            : p
+        ).sort((a, b) => b.vote_count - a.vote_count)
+      );
+      setTotalVotes((t) => t + 1);
+      setMyVotedPhotos((prev) => {
+        const photo = rankings.find((p) => p.id === photoId);
+        return photo ? [...prev, photo] : prev;
       });
-      setMyVotes(addMyVote(photoId));
+
+      // DB in background (fingerprint duplicate check + insert)
+      supabase.from("votes").select("id").eq("photo_id", photoId).eq("fingerprint", fingerprint).then(({ data: existing }) => {
+        if (existing && existing.length > 0) return;
+        supabase.from("votes").insert({
+          photo_id: photoId,
+          device_id: deviceId,
+          fingerprint,
+          ip_address: ip,
+          voter_name: currentName,
+        });
+      });
     }
-    await fetchData();
-    } finally {
-      setVoting(false);
-    }
+    setVoting(false);
   };
 
   const medals = ["🥇", "🥈", "🥉"];
