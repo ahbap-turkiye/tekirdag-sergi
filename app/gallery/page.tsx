@@ -100,12 +100,15 @@ export default function GalleryPage() {
       setVoters((prev) => ({ ...prev, [photoId]: (prev[photoId] || []).slice(0, -1) }));
       setTotalVotes((t) => Math.max(0, t - 1));
 
-      // DB in background (no re-fetch needed, UI already updated)
-      supabase.from("votes").delete().eq("photo_id", photoId).eq("device_id", deviceId);
+      // Optimistic UI + DB write
+      setMyVotes(removeMyVote(photoId));
+      setVoteCounts((prev) => ({ ...prev, [photoId]: Math.max(0, (prev[photoId] || 1) - 1) }));
+      setTotalVotes((t) => Math.max(0, t - 1));
+      await supabase.from("votes").delete().eq("photo_id", photoId).eq("device_id", deviceId);
     } else {
       if (myVotes.length >= MAX_VOTES) { setVoting(false); return; }
 
-      // Name check (must await - can block vote)
+      // Name check
       if (currentName) {
         const { data: nameTaken } = await supabase
           .from("votes")
@@ -122,24 +125,33 @@ export default function GalleryPage() {
       }
       setNameError("");
 
-      // Optimistic: update ALL UI state immediately
-      const newVotes = addMyVote(photoId);
-      setMyVotes(newVotes);
+      // Check duplicate
+      const { data: existing } = await supabase
+        .from("votes")
+        .select("id")
+        .eq("photo_id", photoId)
+        .eq("fingerprint", fingerprint);
+
+      if (existing && existing.length > 0) {
+        setMyVotes(addMyVote(photoId));
+        setVoting(false);
+        return;
+      }
+
+      // Optimistic UI
+      setMyVotes(addMyVote(photoId));
       const voterEntry = { voter_name: currentName, created_at: new Date().toISOString() };
       setVoteCounts((prev) => ({ ...prev, [photoId]: (prev[photoId] || 0) + 1 }));
       setVoters((prev) => ({ ...prev, [photoId]: [...(prev[photoId] || []), voterEntry] }));
       setTotalVotes((t) => t + 1);
 
-      // DB in background (fingerprint duplicate check + insert)
-      supabase.from("votes").select("id").eq("photo_id", photoId).eq("fingerprint", fingerprint).then(({ data: existing }) => {
-        if (existing && existing.length > 0) return;
-        supabase.from("votes").insert({
-          photo_id: photoId,
-          device_id: deviceId,
-          fingerprint,
-          ip_address: ip,
-          voter_name: currentName,
-        });
+      // DB write
+      await supabase.from("votes").insert({
+        photo_id: photoId,
+        device_id: deviceId,
+        fingerprint,
+        ip_address: ip,
+        voter_name: currentName,
       });
     }
     setVoting(false);

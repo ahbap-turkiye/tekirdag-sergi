@@ -96,9 +96,8 @@ export default function VotingPage() {
     const currentName = nameInput.trim() || null;
 
     if (alreadyVoted) {
-      // Optimistic: update ALL UI state immediately
-      const newVotes = removeMyVote(photoId);
-      setMyVotes(newVotes);
+      // Optimistic UI + DB write
+      setMyVotes(removeMyVote(photoId));
       setRankings((prev) =>
         prev.map((p) =>
           p.id === photoId
@@ -108,13 +107,11 @@ export default function VotingPage() {
       );
       setTotalVotes((t) => Math.max(0, t - 1));
       setMyVotedPhotos((prev) => prev.filter((p) => p.id !== photoId));
-
-      // DB in background (no re-fetch needed, UI already updated)
-      supabase.from("votes").delete().eq("photo_id", photoId).eq("device_id", deviceId);
+      await supabase.from("votes").delete().eq("photo_id", photoId).eq("device_id", deviceId);
     } else {
       if (myVotes.length >= MAX_VOTES) { setVoting(false); return; }
 
-      // Name check (must await - can block vote)
+      // Name check
       if (currentName) {
         const { data: nameTaken } = await supabase
           .from("votes")
@@ -131,9 +128,21 @@ export default function VotingPage() {
       }
       setNameError("");
 
-      // Optimistic: update ALL UI state immediately
-      const newVotes = addMyVote(photoId);
-      setMyVotes(newVotes);
+      // Check duplicate
+      const { data: existing } = await supabase
+        .from("votes")
+        .select("id")
+        .eq("photo_id", photoId)
+        .eq("fingerprint", fingerprint);
+
+      if (existing && existing.length > 0) {
+        setMyVotes(addMyVote(photoId));
+        setVoting(false);
+        return;
+      }
+
+      // Optimistic UI
+      setMyVotes(addMyVote(photoId));
       const voterEntry: VoterInfo = { voter_name: currentName, created_at: new Date().toISOString() };
       setRankings((prev) =>
         prev.map((p) =>
@@ -148,16 +157,13 @@ export default function VotingPage() {
         return photo ? [...prev, photo] : prev;
       });
 
-      // DB in background (fingerprint duplicate check + insert)
-      supabase.from("votes").select("id").eq("photo_id", photoId).eq("fingerprint", fingerprint).then(({ data: existing }) => {
-        if (existing && existing.length > 0) return;
-        supabase.from("votes").insert({
-          photo_id: photoId,
-          device_id: deviceId,
-          fingerprint,
-          ip_address: ip,
-          voter_name: currentName,
-        });
+      // DB write
+      await supabase.from("votes").insert({
+        photo_id: photoId,
+        device_id: deviceId,
+        fingerprint,
+        ip_address: ip,
+        voter_name: currentName,
       });
     }
     setVoting(false);
@@ -217,8 +223,10 @@ export default function VotingPage() {
                 const voted = myVotes.includes(photo.id);
                 const canVote = myVotes.length < MAX_VOTES || voted;
 
-                // Calculate rank based on vote count (same votes = same rank)
-                const rank = i === 0 ? 0 : rankings[i - 1].vote_count === photo.vote_count
+                // Calculate rank based on vote count (same votes = same rank, 0 votes = no rank)
+                const rank = photo.vote_count === 0 ? -1
+                  : i === 0 ? 0
+                  : rankings[i - 1].vote_count === photo.vote_count
                   ? rankings.findIndex((r) => r.vote_count === photo.vote_count)
                   : i;
 
@@ -241,7 +249,7 @@ export default function VotingPage() {
                         alt={photo.title}
                         className="w-full h-full object-cover"
                       />
-                      {rank < 3 && (
+                      {rank >= 0 && rank < 3 && (
                         <div className="absolute top-1 left-1 w-7 h-7 rounded-md glass flex items-center justify-center text-sm">
                           {medals[rank]}
                         </div>
