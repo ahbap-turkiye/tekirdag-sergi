@@ -13,6 +13,7 @@ import {
   setVoterName,
   MAX_VOTES,
 } from "@/lib/device";
+import { titleCase } from "@/lib/format";
 
 type VoterInfo = Pick<Vote, "voter_name" | "created_at">;
 type PhotoWithVotes = Photo & { vote_count: number; voters: VoterInfo[] };
@@ -262,7 +263,7 @@ export default function VotingPage() {
                         {photo.title}
                       </h3>
                       <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                        {photo.author}
+                        {titleCase(photo.author)}
                       </p>
 
                       <div className="mt-2 flex items-center gap-3">
@@ -375,7 +376,7 @@ export default function VotingPage() {
                       />
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium truncate">{p.title}</p>
-                        <p className="text-xs text-primary">{p.author}</p>
+                        <p className="text-xs text-primary">{titleCase(p.author)}</p>
                       </div>
                       <button
                         onClick={() => handleVote(p.id)}

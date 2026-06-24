@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase, type Photo } from "@/lib/supabase";
+import { titleCase } from "@/lib/format";
 
 export default function ExhibitionPage() {
   const [photos, setPhotos] = useState<Photo[]>([]);
@@ -182,7 +183,7 @@ export default function ExhibitionPage() {
               </h2>
               <div className="flex items-center gap-4 mb-4">
                 <span className="text-sm font-medium text-white/80">
-                  {photo.author}
+                  {titleCase(photo.author)}
                 </span>
                 {photo.location && (
                   <>

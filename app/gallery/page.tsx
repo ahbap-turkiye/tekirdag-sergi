@@ -13,6 +13,7 @@ import {
   setVoterName,
   MAX_VOTES,
 } from "@/lib/device";
+import { titleCase } from "@/lib/format";
 
 export default function GalleryPage() {
   const [photos, setPhotos] = useState<Photo[]>([]);
@@ -381,7 +382,7 @@ function GalleryCard({
           <p className="font-display text-lg font-semibold text-white">
             {photo.title}
           </p>
-          <p className="text-sm text-white/70">{photo.author}</p>
+          <p className="text-sm text-white/70">{titleCase(photo.author)}</p>
         </div>
       </div>
 
@@ -561,7 +562,7 @@ function PhotoModal({
             <div className="flex items-center gap-2">
               <span className="text-xs uppercase tracking-widest text-primary font-semibold">Fotoğrafçı</span>
             </div>
-            <p className="text-sm" style={{ color: "var(--text-secondary)" }}>{photo.author}</p>
+            <p className="text-sm" style={{ color: "var(--text-secondary)" }}>{titleCase(photo.author)}</p>
           </div>
 
           {photo.location && (
