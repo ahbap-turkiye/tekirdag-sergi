@@ -28,7 +28,7 @@ export default function Footer() {
           </div>
 
           <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-            &copy; 2024 Ahbap Tekirdağ Sergisi
+            &copy; 2026 Ahbap Tekirdağ Sergisi
           </p>
         </div>
       </div>
