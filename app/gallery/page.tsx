@@ -84,6 +84,29 @@ export default function GalleryPage() {
     fetchVoteCounts();
   }, [fetchPhotos, fetchVoteCounts, syncMyVotes]);
 
+  const handleNameBlur = async () => {
+    const name = nameInput.trim();
+    if (!name) return;
+    const deviceId = getDeviceId();
+    const fingerprint = cachedFp || (await getFingerprint());
+    // İsim başka bir cihazda kullanılıyor mu?
+    const { data: nameTaken } = await supabase
+      .from("votes")
+      .select("id")
+      .eq("voter_name", name)
+      .neq("fingerprint", fingerprint)
+      .limit(1);
+    if (nameTaken && nameTaken.length > 0) {
+      setNameError("Bu isim başka bir cihazda kullanılıyor. Farklı bir isim dene.");
+      return;
+    }
+    setNameError("");
+    setVoterName(name);
+    // Bu cihazdan daha önce verilen (anonim dahil) oyları isme güncelle
+    await supabase.from("votes").update({ voter_name: name }).eq("device_id", deviceId);
+    fetchVoteCounts();
+  };
+
   const handleVote = async (photoId: string) => {
     if (voting) return;
     setVoting(true);
@@ -215,6 +238,7 @@ export default function GalleryPage() {
                 setNameInput(e.target.value);
                 setVoterName(e.target.value);
               }}
+              onBlur={handleNameBlur}
               placeholder="İsmin (isteğe bağlı)"
               className={`w-full px-3 py-1.5 rounded-lg text-sm border bg-transparent focus:outline-none transition-colors ${nameError ? "border-red-500" : "border-(--border) focus:border-primary"}`}
             />
