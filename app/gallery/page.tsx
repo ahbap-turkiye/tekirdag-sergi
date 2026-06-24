@@ -66,16 +66,26 @@ export default function GalleryPage() {
   }, []);
 
   const syncMyVotes = useCallback(async () => {
-    const deviceId = getDeviceId();
+    // Kimlik fingerprint'e bağlı: device_id (localStorage) tarayıcı/uygulama
+    // değişince sıfırlanıyor, fingerprint ise sabit kalıyor.
+    const fingerprint = await getFingerprint();
+    if (!fingerprint) return;
     const { data: myDbVotes } = await supabase
       .from("votes")
-      .select("photo_id")
-      .eq("device_id", deviceId);
+      .select("photo_id, voter_name")
+      .eq("fingerprint", fingerprint);
     const dbVotedIds = myDbVotes ? myDbVotes.map((v) => v.photo_id) : [];
     if (typeof window !== "undefined") {
       localStorage.setItem("sergi_my_votes", JSON.stringify(dbVotedIds));
     }
     setMyVotes(dbVotedIds);
+    // İsim bu tarayıcıda kayıtlı değilse ama bu fingerprint'le daha önce
+    // isim girilmişse geri yükle (farklı tarayıcıdan açınca isim kaybolmasın).
+    const savedName = myDbVotes?.find((v) => v.voter_name)?.voter_name;
+    if (savedName && !getVoterName()) {
+      setVoterName(savedName);
+      setNameInput(savedName);
+    }
   }, []);
 
   useEffect(() => {
@@ -87,7 +97,6 @@ export default function GalleryPage() {
   const handleNameBlur = async () => {
     const name = nameInput.trim();
     if (!name) return;
-    const deviceId = getDeviceId();
     const fingerprint = cachedFp || (await getFingerprint());
     // İsim başka bir cihazda kullanılıyor mu?
     const { data: nameTaken } = await supabase
@@ -102,9 +111,10 @@ export default function GalleryPage() {
     }
     setNameError("");
     setVoterName(name);
-    // Bu cihazdan daha önce verilen (anonim dahil) oyları isme güncelle
-    await supabase.from("votes").update({ voter_name: name }).eq("device_id", deviceId);
+    // Bu fingerprint'le verilen (anonim dahil) tüm oyları isme güncelle
+    await supabase.from("votes").update({ voter_name: name }).eq("fingerprint", fingerprint);
     fetchVoteCounts();
+    syncMyVotes();
   };
 
   const handleVote = async (photoId: string) => {
@@ -128,7 +138,7 @@ export default function GalleryPage() {
       setMyVotes(removeMyVote(photoId));
       setVoteCounts((prev) => ({ ...prev, [photoId]: Math.max(0, (prev[photoId] || 1) - 1) }));
       setTotalVotes((t) => Math.max(0, t - 1));
-      await supabase.from("votes").delete().eq("photo_id", photoId).eq("device_id", deviceId);
+      await supabase.from("votes").delete().eq("photo_id", photoId).eq("fingerprint", fingerprint);
     } else {
       if (myVotes.length >= MAX_VOTES) { setVoting(false); return; }
 
